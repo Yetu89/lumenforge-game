@@ -72,6 +72,16 @@ function fireBeam(world, ox, oy, angle, stats) {
   }
   hits.sort((a, b) => a.d - b.d);
   const struck = stats.pierce ? hits : hits.slice(0, 1);
+  // Visual only: where the beam first made contact, so the renderer can
+  // burst particles there. No gameplay rule reads these fields.
+  if (struck.length > 0) {
+    const h0 = struck[0].ref;
+    const hp = h0.kind === 'enemy' ? h0.e
+      : h0.kind === 'segment' ? { x: FORGE.x + Math.cos(h0.s.angle) * 250, y: FORGE.y + Math.sin(h0.s.angle) * 250 }
+      : h0.b;
+    beam.hitX = hp.x;
+    beam.hitY = hp.y;
+  }
   for (const h of struck) damageTarget(world, h.ref, stats);
   if (struck.length > 0) {
     world.stats.hits++;

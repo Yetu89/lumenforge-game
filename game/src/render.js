@@ -7,6 +7,19 @@ const GOLD = '#ffd34d';
 const TEAL = '#7de8d8';
 const INK = '#0a0e24';
 
+/** HUD relic icons: one distinct glyph + tint per relic (visual only). */
+const RELIC_GLYPH = {
+  split: '✦', pierce: '◈', chain: '⚡', twin: '❂', magnet: '◉', glass: '▣',
+  overcharge: '✚', echo: '◎', wide: '◐', slowfield: '❄', siphon: '♥', crit: '✹',
+  crank: '↻', prismspray: '✳', golden: '☀', aegis: '◆',
+};
+const RELIC_TINT = {
+  split: '#ffd34d', pierce: '#9fd8ff', chain: '#ffe08a', twin: '#e8b4ff',
+  magnet: '#ff8ab0', glass: '#7de8d8', overcharge: '#ffb347', echo: '#c9b8ff',
+  wide: '#8be0a4', slowfield: '#a8d8ff', siphon: '#ff6b81', crit: '#ff5c5c',
+  crank: '#ffd34d', prismspray: '#ff9ff3', golden: '#ffd700', aegis: '#9fd8ff',
+};
+
 /** Clickable buttons of the current screen: {x, y, w, h, id, label}. */
 export function buttonsFor(world) {
   if (world.screen === 'title') {
@@ -189,6 +202,9 @@ function drawEnemies(ctx, world) {
     ctx.save();
     ctx.translate(e.x, e.y);
     if (e.flash > 0) ctx.globalAlpha = 0.85;
+    // Glow so no enemy reads as a flat circle on the dark field.
+    ctx.shadowColor = c;
+    ctx.shadowBlur = 12;
     ctx.fillStyle = c;
     ctx.strokeStyle = c;
     ctx.lineWidth = 2;
@@ -236,6 +252,11 @@ function drawEnemies(ctx, world) {
       ctx.beginPath(); ctx.arc(-4, -3, 3, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(4, -3, 3, 0, Math.PI * 2); ctx.fill();
     }
+    // Thin halo ring: a second read on each shape at a glance.
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0, 0, e.radius + 3, 0, Math.PI * 2); ctx.stroke();
     // HP pips for tough enemies.
     if (e.maxHp >= 3) {
       ctx.fillStyle = 'rgba(255,255,255,0.85)';
@@ -257,8 +278,20 @@ function drawBoss(ctx, world) {
       if (!s.alive) continue;
       const x = FORGE.x + Math.cos(s.angle) * 250;
       const y = FORGE.y + Math.sin(s.angle) * 250;
+      // Serrated segment: an 8-point star, not a plain disc.
       ctx.fillStyle = s.flash > 0 ? '#fff' : '#8a7bff';
-      ctx.beginPath(); ctx.arc(x, y, s.radius, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowColor = '#8a7bff';
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2 + s.angle;
+        const pr = i % 2 === 0 ? s.radius : s.radius * 0.68;
+        const px = x + Math.cos(a) * pr;
+        const py = y + Math.sin(a) * pr;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      ctx.shadowBlur = 0;
       ctx.strokeStyle = '#c9b8ff';
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(x, y, s.radius + 6, 0, Math.PI * 2); ctx.stroke();
@@ -271,10 +304,24 @@ function drawBoss(ctx, world) {
   ctx.translate(b.x, b.y);
   if (b.flash > 0) ctx.globalAlpha = 0.85;
   if (b.def.id === 'mothqueen') {
-    // Big moth: two wings and a body.
+    // Big moth: two wings and a body, with a glowing outline and wing veins.
+    ctx.shadowColor = '#e8b4ff';
+    ctx.shadowBlur = 18;
     ctx.fillStyle = '#e8b4ff';
     ctx.beginPath(); ctx.ellipse(-34, -8, 34, 22, -0.5, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(34, -8, 34, 22, 0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    // Wing veins: inner ellipse strokes + eye-spots, so the wings read as wings.
+    ctx.strokeStyle = '#7a4a8f';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(-34, -8, 22, 13, -0.5, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(34, -8, 22, 13, 0.5, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#ffd34d';
+    ctx.beginPath(); ctx.arc(-44, -14, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(44, -14, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#7a4a8f';
+    ctx.beginPath(); ctx.arc(-44, -14, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(44, -14, 2.5, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#7a4a8f';
     ctx.beginPath(); ctx.ellipse(0, 0, 16, 34, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#ffd34d';
@@ -282,9 +329,19 @@ function drawBoss(ctx, world) {
     ctx.beginPath(); ctx.arc(8, -14, 4, 0, Math.PI * 2); ctx.fill();
   } else {
     // The Unraveler: a torn ring with a burning core; shield arcs when guarded.
+    // Pulsing dark aura: a breathing halo that never touches the hitbox.
+    const pulse = 0.5 + 0.5 * Math.sin(world.time * 2.4);
+    const aura = ctx.createRadialGradient(0, 0, b.radius, 0, 0, b.radius + 46 + pulse * 14);
+    aura.addColorStop(0, 'rgba(120,20,60,0.35)');
+    aura.addColorStop(1, 'rgba(120,20,60,0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(0, 0, b.radius + 46 + pulse * 14, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = b.vulnerable ? '#ffd34d' : '#ff6b6b';
+    ctx.shadowColor = b.vulnerable ? '#ffd34d' : '#ff6b6b';
+    ctx.shadowBlur = 20;
     ctx.lineWidth = 8;
     ctx.beginPath(); ctx.arc(0, 0, b.radius, 0, Math.PI * 2); ctx.stroke();
+    ctx.shadowBlur = 0;
     ctx.strokeStyle = 'rgba(255,107,107,0.4)';
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(0, 0, b.radius + 12, b.angle, b.angle + 2.2); ctx.stroke();
@@ -317,13 +374,50 @@ function drawSparks(ctx, world) {
 function drawBeams(ctx, world) {
   for (const b of world.beams || []) {
     const a = Math.min(1, b.life / 0.09);
+    // One small burst at the contact point, the first frame the beam is seen.
+    // Visual only: the particles are culled by the normal update loop.
+    if (b.hitX !== undefined && !b.burstDone) {
+      b.burstDone = true;
+      for (let i = 0; i < 10; i++) {
+        const ang = Math.random() * Math.PI * 2;
+        const sp = 60 + Math.random() * 200;
+        (world.particles = world.particles || []).push({
+          x: b.hitX, y: b.hitY,
+          vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp,
+          life: 0.25 + Math.random() * 0.3,
+          color: i % 3 === 0 ? '#ffffff' : (b.eclipse ? GOLD : '#cfe9ff'),
+          r: 1.5 + Math.random() * 2.5,
+        });
+      }
+    }
+    const hot = b.eclipse;
+    const glowCol = hot ? '255,160,40' : '120,180,255';
+    const midCol = hot ? GOLD : '#cfe9ff';
     ctx.save();
     ctx.globalAlpha = a;
-    ctx.strokeStyle = b.eclipse ? GOLD : '#cfe9ff';
-    ctx.lineWidth = b.width;
     ctx.lineCap = 'round';
-    ctx.shadowColor = b.eclipse ? GOLD : '#9fd8ff';
-    ctx.shadowBlur = b.eclipse ? 26 : 12;
+    // Layer 1: wide translucent outer glow.
+    ctx.strokeStyle = `rgba(${glowCol},0.30)`;
+    ctx.lineWidth = b.width * 2.6;
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.moveTo(b.x1, b.y1);
+    ctx.lineTo(b.x2, b.y2);
+    ctx.stroke();
+    // Layer 2: bright mid beam.
+    ctx.strokeStyle = midCol;
+    ctx.lineWidth = b.width;
+    ctx.shadowColor = midCol;
+    ctx.shadowBlur = hot ? 26 : 12;
+    ctx.beginPath();
+    ctx.moveTo(b.x1, b.y1);
+    ctx.lineTo(b.x2, b.y2);
+    ctx.stroke();
+    // Layer 3: thin white-hot core, width jittering every frame.
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = Math.max(2, b.width * (0.22 + Math.random() * 0.14));
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 8;
     ctx.beginPath();
     ctx.moveTo(b.x1, b.y1);
     ctx.lineTo(b.x2, b.y2);
@@ -403,10 +497,10 @@ function drawHUD(ctx, world) {
     ctx.lineWidth = 1.5;
     rr(ctx, rx, 668, 34, 34, 8);
     ctx.stroke();
-    ctx.fillStyle = GOLD;
-    ctx.font = 'bold 16px system-ui, sans-serif';
+    ctx.fillStyle = RELIC_TINT[id] || GOLD;
+    ctx.font = 'bold 17px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(relic.name[0], rx + 17, 691);
+    ctx.fillText(RELIC_GLYPH[id] || relic.name[0], rx + 17, 691);
     ctx.textAlign = 'left';
     rx += 42;
   }
@@ -420,17 +514,25 @@ function drawHUD(ctx, world) {
     ctx.fillStyle = GOLD;
     rr(ctx, bx, 668, bw * (world.eclipse / PLAYER.eclipseDuration), 18, 8);
     ctx.fill();
-    ctx.fillStyle = '#0a0e24';
+    // White text with a dark outline: readable on the gold bar AND where it
+    // spills past the bar's shrinking edge onto the dark panel.
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.textAlign = 'center';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(10,14,36,0.9)';
+    ctx.strokeText(`ECLIPSE BEAM  ${world.eclipse.toFixed(1)}s`, 640, 681);
+    ctx.fillStyle = '#fff';
     ctx.fillText(`ECLIPSE BEAM  ${world.eclipse.toFixed(1)}s`, 640, 681);
   } else {
     ctx.fillStyle = '#e8c15a';
     rr(ctx, bx, 668, bw * (world.alignment / 100), 18, 8);
     ctx.fill();
-    ctx.fillStyle = '#fff';
     ctx.font = 'bold 13px system-ui, sans-serif';
     ctx.textAlign = 'center';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(10,14,36,0.9)';
+    ctx.strokeText(`ALIGNMENT  ${Math.floor(world.alignment)}% — sweep the aim over golden motes`, 640, 681);
+    ctx.fillStyle = '#fff';
     ctx.fillText(`ALIGNMENT  ${Math.floor(world.alignment)}% — sweep the aim over golden motes`, 640, 681);
   }
   // Message banner.
